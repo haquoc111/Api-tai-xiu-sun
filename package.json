@@ -1,7 +1,6 @@
 {
-  "name": "tai-xiu-api",
-  "version": "1.0.0",
-  "description": "API bắt cầu tài xỉu",
+  "name": "tai-xiu-ai",
+  "version": "2.0.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
