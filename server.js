@@ -15,7 +15,7 @@ app.use(express.json());
 // ===============================
 // API GỐC - THAY LINK TẠI ĐÂY
 // ===============================
-const API_URL = "https://bracket-ellen-roads-prefer.trycloudflare.com/api/tx";
+const API_URL = "http://103.249.117.201:49483/sunwin/tx?key=f7fe0e32f71684bd95ec94f59609801364193b297db4d60e";
 
 // ===============================
 // LỊCH SỬ
