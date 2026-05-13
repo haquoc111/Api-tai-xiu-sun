@@ -1,5 +1,5 @@
 // ===============================
-// server.js - THUẬT TOÁN NÂNG CẤP + ĐỌC API CHÍNH XÁC
+// server.js - THUẬT TOÁN NÂNG CẤP + ĐỌC ĐÚNG API (xuc_xac_1,2,3)
 // ===============================
 
 const express = require("express");
@@ -206,7 +206,6 @@ function getSignalWeight(signalName, baseWeight) {
 function analyze(history) {
     const MIN_HIST = 3;
 
-    // Xử lý khi chưa đủ dữ liệu (không random)
     if (history.length === 0) {
         return {
             du_doan: "tài",
@@ -257,7 +256,7 @@ function analyze(history) {
     let signals = [];
     let dominantCau = "";
 
-    // 1. Markov Chain
+    // 1. Markov
     const markovWeight = getSignalWeight("markov", 25);
     const markovTaiProb = last === "tài" ? markov : 1 - markov;
     if (markovTaiProb > 0.5) {
@@ -268,7 +267,7 @@ function analyze(history) {
         signals.push(`Markov→Xỉu (${((1-markovTaiProb)*100).toFixed(0)}%)`);
     }
 
-    // 2. Pattern Matching đa độ dài
+    // 2. Pattern matching
     if (pm) {
         const patternWeight = getSignalWeight("pattern", 30);
         if (pm.taiProb > pm.xiuProb) {
@@ -280,7 +279,7 @@ function analyze(history) {
         }
     }
 
-    // 3. Cầu bệt + lịch sử gãy
+    // 3. Bệt + lịch sử gãy
     if (streak.length >= 2) {
         const streakWeight = getSignalWeight("streak", 35);
         const sKey = Math.min(streak.length, 8);
@@ -345,7 +344,6 @@ function analyze(history) {
     // 7. Cầu 1-2-1
     if (is121) {
         const w = getSignalWeight("cau121", 22);
-        // Quy luật mẫu A B B A B B -> sau B là B
         const predict = (last === results[results.length-2] && last !== results[results.length-3]) ? last : (last === "tài" ? "xỉu" : "tài");
         if (predict === "tài") voteTai += w * 0.7;
         else voteXiu += w * 0.7;
@@ -353,7 +351,7 @@ function analyze(history) {
         signals.push(`Cầu121→${predict}`);
     }
 
-    // 8. Cân bằng tài/xỉu
+    // 8. Cân bằng
     const balanceWeight = getSignalWeight("balance", 12);
     if (ratio.total > 0) {
         const ratioTai = ratio.tai / ratio.total;
@@ -366,7 +364,7 @@ function analyze(history) {
         }
     }
 
-    // 9. Xu hướng siêu ngắn (2 phiên cuối)
+    // 9. Xu hướng siêu ngắn
     if (results.length >= 2) {
         const lastTwo = results.slice(-2);
         if (lastTwo[0] === lastTwo[1]) {
@@ -383,7 +381,6 @@ function analyze(history) {
         }
     }
 
-    // Kết luận
     const totalVote = voteTai + voteXiu;
     const du_doan = voteTai >= voteXiu ? "tài" : "xỉu";
     const winVote = Math.max(voteTai, voteXiu);
@@ -407,7 +404,7 @@ function analyze(history) {
 }
 
 // ===============================
-// CẬP NHẬT HỌC THÍCH ỨNG SAU MỖI PHIÊN
+// CẬP NHẬT HỌC THÍCH ỨNG
 // ===============================
 function updateLearningFromLastPrediction(newItem) {
     if (predictionLog.length === 0) return;
@@ -421,49 +418,43 @@ function updateLearningFromLastPrediction(newItem) {
 }
 
 // ===============================
-// LẤY DỮ LIỆU API CHÍNH XÁC
+// LẤY DỮ LIỆU API - CẤU TRÚC XUC_XAC_1,2,3
 // ===============================
 async function fetchData() {
     try {
         const response = await axios.get(API_URL, { timeout: 10000 });
         const data = response.data;
         lastRawResponse = data;
-        console.log("📦 Raw API response:", JSON.stringify(data, null, 2));
+        console.log("📦 Raw API:", JSON.stringify(data, null, 2));
 
-        let phien = null;
+        // Parse phien
+        let phien = data?.phien || data?.session || data?.id || data?.data?.phien || Date.now();
+
+        // Parse xúc xắc: ưu tiên xuc_xac_1,2,3
         let dice = null;
-
-        // Lấy số phiên
-        if (data?.phien) phien = data.phien;
-        else if (data?.session) phien = data.session;
-        else if (data?.id) phien = data.id;
-        else if (data?.data?.phien) phien = data.data.phien;
-        else if (data?.data?.session) phien = data.data.session;
-        else if (data?.current_phien) phien = data.current_phien;
-
-        // Lấy xúc xắc
-        if (Array.isArray(data?.xuc_xac)) dice = data.xuc_xac;
-        else if (Array.isArray(data?.dice)) dice = data.dice;
-        else if (Array.isArray(data?.data?.xuc_xac)) dice = data.data.xuc_xac;
-        else if (Array.isArray(data?.data?.dice)) dice = data.data.dice;
-        else if (data?.x1 && data?.x2 && data?.x3) dice = [Number(data.x1), Number(data.x2), Number(data.x3)];
-        else if (typeof data?.xuc_xac === "string") dice = data.xuc_xac.split("-").map(Number);
-        else if (typeof data?.dice === "string") dice = data.dice.split("-").map(Number);
-        else if (data?.result && Array.isArray(data.result)) dice = data.result;
-        else if (data?.value && typeof data.value === "string") {
-            const parts = data.value.split("-");
-            if (parts.length === 3) dice = parts.map(Number);
+        if (data?.xuc_xac_1 && data?.xuc_xac_2 && data?.xuc_xac_3) {
+            dice = [Number(data.xuc_xac_1), Number(data.xuc_xac_2), Number(data.xuc_xac_3)];
+        } else if (Array.isArray(data?.xuc_xac)) {
+            dice = data.xuc_xac;
+        } else if (Array.isArray(data?.dice)) {
+            dice = data.dice;
+        } else if (data?.x1 && data?.x2 && data?.x3) {
+            dice = [Number(data.x1), Number(data.x2), Number(data.x3)];
+        } else if (typeof data?.xuc_xac === "string") {
+            dice = data.xuc_xac.split("-").map(Number);
+        } else if (data?.result && Array.isArray(data.result)) {
+            dice = data.result;
         }
 
         if (!dice || dice.length !== 3) {
-            console.error("❌ Không lấy được xúc xắc từ API. Data:", data);
+            console.error("❌ Không parse được xúc xắc. Data:", data);
             return;
         }
 
-        dice = dice.map(v => Number(v));
         const total = dice.reduce((a,b) => a+b, 0);
-        const ket_qua = getResult(total);
-        if (!phien) phien = Date.now();
+        // Ưu tiên lấy ket_qua từ API nếu có (để đồng bộ)
+        let ket_qua = data?.ket_qua ? data.ket_qua.toLowerCase() : getResult(total);
+        if (ket_qua !== "tài" && ket_qua !== "xỉu") ket_qua = getResult(total);
 
         const item = { phien, ket_qua, xuc_xac: dice.join("-"), tong: total, time: Date.now() };
         const exists = history.find(i => i.phien == phien);
@@ -497,7 +488,6 @@ app.get("/", (req, res) => {
     if (!latest) return res.json({ msg: "Đang tải dữ liệu...", debug: lastRawResponse });
 
     const predict = analyze(history);
-    // Lưu dự đoán cho việc học
     predictionLog.push({
         phien: latest.phien + 1,
         du_doan: predict.du_doan,
