@@ -1,5 +1,5 @@
 // ===============================
-// server.js - SỬA LỖI ĐỌC API + THUẬT TOÁN NÂNG CẤP
+// server.js - THUẬT TOÁN NÂNG CẤP + ĐỌC API CHÍNH XÁC
 // ===============================
 
 const express = require("express");
@@ -12,9 +12,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// ===============================
-// API GỐC - THAY LINK TẠI ĐÂY
-// ===============================
 const API_URL = "http://103.249.117.201:49483/sunwin/tx?key=f7fe0e32f71684bd95ec94f59609801364193b297db4d60e";
 
 // ===============================
@@ -22,7 +19,7 @@ const API_URL = "http://103.249.117.201:49483/sunwin/tx?key=f7fe0e32f71684bd95ec
 // ===============================
 let history = [];
 let predictionLog = [];
-let lastRawResponse = null; // lưu raw response để debug
+let lastRawResponse = null;
 
 let signalStats = {
     markov: { correct: 0, total: 0 },
@@ -42,14 +39,11 @@ function getResult(total) {
     return total >= 11 ? "tài" : "xỉu";
 }
 
-// ===============================
-// HÀM TIỆN ÍCH LẤY MẢNG KẾT QUẢ
-// ===============================
 function getResultArray(hist) {
     return hist.map((h) => h.ket_qua);
 }
 
-// --- Đếm bệt hiện tại ---
+// --- Đếm bệt ---
 function getCurrentStreak(results) {
     if (results.length === 0) return { value: "xỉu", length: 0 };
     const last = results[results.length - 1];
@@ -61,7 +55,7 @@ function getCurrentStreak(results) {
     return { value: last, length: len };
 }
 
-// --- Phát hiện cầu 1-1 ---
+// --- Cầu 1-1 ---
 function detect11Pattern(results, minLen = 4) {
     if (results.length < minLen) return { detected: false, length: 0 };
     let count = 1;
@@ -72,7 +66,7 @@ function detect11Pattern(results, minLen = 4) {
     return { detected: count >= minLen, length: count };
 }
 
-// --- Phát hiện cầu 2-2 ---
+// --- Cầu 2-2 ---
 function detect22Pattern(results) {
     if (results.length < 6) return false;
     const r = results.slice(-8);
@@ -86,7 +80,7 @@ function detect22Pattern(results) {
     return false;
 }
 
-// --- Phát hiện cầu 3-3 ---
+// --- Cầu 3-3 ---
 function detect33Pattern(results) {
     if (results.length < 10) return false;
     const r = results.slice(-12);
@@ -99,7 +93,7 @@ function detect33Pattern(results) {
     return false;
 }
 
-// --- Phát hiện cầu 1-2-1 ---
+// --- Cầu 1-2-1 ---
 function detect121Pattern(results) {
     if (results.length < 8) return false;
     const r = results.slice(-9);
@@ -164,7 +158,7 @@ function multiPatternMatch(results) {
     return null;
 }
 
-// --- Thống kê lịch sử bệt ---
+// --- Thống kê gãy cầu bệt ---
 function streakBreakStat(results) {
     const stat = {};
     for (let s = 2; s <= 8; s++) stat[s] = { cont: 0, break: 0 };
@@ -190,7 +184,7 @@ function recentRatio(results, window = 10) {
 }
 
 // ===============================
-// HÀM CẬP NHẬT ĐỘ CHÍNH XÁC
+// HÀM HỌC THÍCH ỨNG
 // ===============================
 function updateSignalAccuracy(signalName, wasCorrect) {
     if (!signalStats[signalName]) return;
@@ -207,19 +201,213 @@ function getSignalWeight(signalName, baseWeight) {
 }
 
 // ===============================
-// PHÂN TÍCH TỔNG HỢP (giữ nguyên logic cũ)
+// THUẬT TOÁN DỰ ĐOÁN CHÍNH (BÁM CẦU, BẺ CẦU, KHÔNG RANDOM)
 // ===============================
 function analyze(history) {
-    // ... (toàn bộ hàm analyze y hệt như code bạn đã gửi, không thay đổi)
-    // Vì quá dài, tôi sẽ giữ nguyên phần này từ code gốc của bạn.
-    // Ở đây tôi chỉ viết lại phần fetchData và endpoint debug.
-    // Bạn hãy chép lại nguyên vẹn hàm analyze từ file bạn đã gửi vào đây.
-    // Dưới đây là placeholder, khi chạy thực tế bạn phải copy đúng hàm analyze.
-    return { du_doan: "tài", do_tin_cay: "50%", do_tin_cay_so: 50, cau: "", chi_tiet: "", vote: { tai: 0, xiu: 0 } };
+    const MIN_HIST = 3;
+
+    // Xử lý khi chưa đủ dữ liệu (không random)
+    if (history.length === 0) {
+        return {
+            du_doan: "tài",
+            do_tin_cay: "50%",
+            do_tin_cay_so: 50,
+            cau: "Chưa có dữ liệu, mặc định Tài",
+            chi_tiet: "Không random, chọn Tài làm mặc định",
+            vote: { tai: 50, xiu: 50 }
+        };
+    }
+    if (history.length === 1) {
+        const only = history[0].ket_qua;
+        return {
+            du_doan: only,
+            do_tin_cay: "60%",
+            do_tin_cay_so: 60,
+            cau: `Chỉ có 1 phiên, theo bệt ${only}`,
+            chi_tiet: "Theo xu hướng duy nhất",
+            vote: { tai: only === "tài" ? 60 : 40, xiu: only === "xỉu" ? 60 : 40 }
+        };
+    }
+    if (history.length === 2) {
+        const r1 = history[0].ket_qua, r2 = history[1].ket_qua;
+        const du_doan = (r1 === r2) ? r1 : (r1 === "tài" ? "xỉu" : "tài");
+        return {
+            du_doan: du_doan,
+            do_tin_cay: "65%",
+            do_tin_cay_so: 65,
+            cau: r1 === r2 ? `Bệt ${r1} phiên thứ 2` : "Cầu đảo sau 2 phiên",
+            chi_tiet: `Logic từ ${r1} -> ${r2}`,
+            vote: { tai: du_doan === "tài" ? 65 : 35, xiu: du_doan === "xỉu" ? 65 : 35 }
+        };
+    }
+
+    const results = getResultArray(history);
+    const streak = getCurrentStreak(results);
+    const pattern11 = detect11Pattern(results);
+    const is22 = detect22Pattern(results);
+    const is33 = detect33Pattern(results);
+    const is121 = detect121Pattern(results);
+    const markov = markovProbability(results);
+    const pm = multiPatternMatch(results);
+    const streakStat = streakBreakStat(results);
+    const ratio = recentRatio(results, 12);
+    const last = results[results.length - 1];
+
+    let voteTai = 0, voteXiu = 0;
+    let signals = [];
+    let dominantCau = "";
+
+    // 1. Markov Chain
+    const markovWeight = getSignalWeight("markov", 25);
+    const markovTaiProb = last === "tài" ? markov : 1 - markov;
+    if (markovTaiProb > 0.5) {
+        voteTai += markovWeight * markovTaiProb;
+        signals.push(`Markov→Tài (${(markovTaiProb*100).toFixed(0)}%)`);
+    } else {
+        voteXiu += markovWeight * (1 - markovTaiProb);
+        signals.push(`Markov→Xỉu (${((1-markovTaiProb)*100).toFixed(0)}%)`);
+    }
+
+    // 2. Pattern Matching đa độ dài
+    if (pm) {
+        const patternWeight = getSignalWeight("pattern", 30);
+        if (pm.taiProb > pm.xiuProb) {
+            voteTai += patternWeight * pm.taiProb;
+            signals.push(`PatternMatch→Tài (${(pm.taiProb*100).toFixed(0)}%)`);
+        } else {
+            voteXiu += patternWeight * pm.xiuProb;
+            signals.push(`PatternMatch→Xỉu (${(pm.xiuProb*100).toFixed(0)}%)`);
+        }
+    }
+
+    // 3. Cầu bệt + lịch sử gãy
+    if (streak.length >= 2) {
+        const streakWeight = getSignalWeight("streak", 35);
+        const sKey = Math.min(streak.length, 8);
+        const sData = streakStat[sKey];
+        const sTotalObs = sData.cont + sData.break;
+        let breakProb = 0.5;
+        if (sTotalObs >= 5) {
+            breakProb = sData.break / sTotalObs;
+        } else {
+            if (streak.length === 2) breakProb = 0.48;
+            else if (streak.length === 3) breakProb = 0.55;
+            else if (streak.length === 4) breakProb = 0.62;
+            else if (streak.length === 5) breakProb = 0.70;
+            else breakProb = Math.min(0.85, 0.70 + (streak.length - 5) * 0.05);
+        }
+        const contProb = 1 - breakProb;
+        if (breakProb > contProb) {
+            const opposite = streak.value === "tài" ? "xỉu" : "tài";
+            if (opposite === "tài") voteTai += streakWeight * breakProb;
+            else voteXiu += streakWeight * breakProb;
+            dominantCau = `Bệt ${streak.value} x${streak.length} → bẻ cầu (${(breakProb*100).toFixed(0)}%)`;
+            signals.push(`Streak bẻ→${opposite}`);
+        } else {
+            if (streak.value === "tài") voteTai += streakWeight * contProb;
+            else voteXiu += streakWeight * contProb;
+            dominantCau = `Bệt ${streak.value} x${streak.length} → theo cầu (${(contProb*100).toFixed(0)}%)`;
+            signals.push(`Streak theo→${streak.value}`);
+        }
+    }
+
+    // 4. Cầu 1-1
+    if (pattern11.detected) {
+        const w = getSignalWeight("cau11", 30);
+        const opposite = last === "tài" ? "xỉu" : "tài";
+        const conf = Math.min(0.85, 0.65 + pattern11.length * 0.04);
+        if (opposite === "tài") voteTai += w * conf;
+        else voteXiu += w * conf;
+        if (!dominantCau) dominantCau = `Cầu 1-1 (${pattern11.length} phiên)`;
+        signals.push(`Cầu1-1→${opposite}`);
+    }
+
+    // 5. Cầu 2-2
+    if (is22) {
+        const w = getSignalWeight("cau22", 20);
+        const opposite = last === "tài" ? "xỉu" : "tài";
+        if (opposite === "tài") voteTai += w * 0.72;
+        else voteXiu += w * 0.72;
+        if (!dominantCau) dominantCau = "Cầu 2-2";
+        signals.push(`Cầu2-2→${opposite}`);
+    }
+
+    // 6. Cầu 3-3
+    if (is33) {
+        const w = getSignalWeight("cau33", 25);
+        const opposite = last === "tài" ? "xỉu" : "tài";
+        if (opposite === "tài") voteTai += w * 0.78;
+        else voteXiu += w * 0.78;
+        if (!dominantCau) dominantCau = "Cầu 3-3";
+        signals.push(`Cầu3-3→${opposite}`);
+    }
+
+    // 7. Cầu 1-2-1
+    if (is121) {
+        const w = getSignalWeight("cau121", 22);
+        // Quy luật mẫu A B B A B B -> sau B là B
+        const predict = (last === results[results.length-2] && last !== results[results.length-3]) ? last : (last === "tài" ? "xỉu" : "tài");
+        if (predict === "tài") voteTai += w * 0.7;
+        else voteXiu += w * 0.7;
+        if (!dominantCau) dominantCau = "Cầu 1-2-1";
+        signals.push(`Cầu121→${predict}`);
+    }
+
+    // 8. Cân bằng tài/xỉu
+    const balanceWeight = getSignalWeight("balance", 12);
+    if (ratio.total > 0) {
+        const ratioTai = ratio.tai / ratio.total;
+        if (ratioTai > 0.65) {
+            voteXiu += balanceWeight;
+            signals.push("Cân bằng→Xỉu");
+        } else if (ratioTai < 0.35) {
+            voteTai += balanceWeight;
+            signals.push("Cân bằng→Tài");
+        }
+    }
+
+    // 9. Xu hướng siêu ngắn (2 phiên cuối)
+    if (results.length >= 2) {
+        const lastTwo = results.slice(-2);
+        if (lastTwo[0] === lastTwo[1]) {
+            const shortWeight = 8;
+            if (lastTwo[0] === "tài") voteTai += shortWeight;
+            else voteXiu += shortWeight;
+            signals.push(`Xu hướng ngắn→${lastTwo[0]}`);
+        } else {
+            const shortWeight = 6;
+            const next = lastTwo[1] === "tài" ? "xỉu" : "tài";
+            if (next === "tài") voteTai += shortWeight;
+            else voteXiu += shortWeight;
+            signals.push(`Xu hướng ngắn→${next}`);
+        }
+    }
+
+    // Kết luận
+    const totalVote = voteTai + voteXiu;
+    const du_doan = voteTai >= voteXiu ? "tài" : "xỉu";
+    const winVote = Math.max(voteTai, voteXiu);
+    let rawConf = totalVote > 0 ? winVote / totalVote : 0.5;
+    const consensus = Math.abs(voteTai - voteXiu) / totalVote;
+    let confPercent = Math.round(55 + (rawConf - 0.5) * 2 * 35 + consensus * 10);
+    confPercent = Math.min(92, Math.max(55, confPercent));
+
+    if (!dominantCau) {
+        dominantCau = du_doan === "tài" ? "Tổng hợp → Tài" : "Tổng hợp → Xỉu";
+    }
+
+    return {
+        du_doan,
+        do_tin_cay: confPercent + "%",
+        do_tin_cay_so: confPercent,
+        cau: dominantCau,
+        chi_tiet: signals.join(" | "),
+        vote: { tai: Math.round(voteTai), xiu: Math.round(voteXiu) }
+    };
 }
 
 // ===============================
-// CẬP NHẬT HỌC THÍCH ỨNG
+// CẬP NHẬT HỌC THÍCH ỨNG SAU MỖI PHIÊN
 // ===============================
 function updateLearningFromLastPrediction(newItem) {
     if (predictionLog.length === 0) return;
@@ -233,69 +421,51 @@ function updateLearningFromLastPrediction(newItem) {
 }
 
 // ===============================
-// LẤY DỮ LIỆU API - CHÍNH XÁC 100%
+// LẤY DỮ LIỆU API CHÍNH XÁC
 // ===============================
 async function fetchData() {
     try {
         const response = await axios.get(API_URL, { timeout: 10000 });
         const data = response.data;
-        lastRawResponse = data; // lưu để debug
-
+        lastRawResponse = data;
         console.log("📦 Raw API response:", JSON.stringify(data, null, 2));
 
-        // ---- PHÂN TÍCH CẤU TRÚC DỮ LIỆU ----
         let phien = null;
         let dice = null;
 
-        // 1. Lấy số phiên (ưu tiên các trường phổ biến)
+        // Lấy số phiên
         if (data?.phien) phien = data.phien;
         else if (data?.session) phien = data.session;
         else if (data?.id) phien = data.id;
         else if (data?.data?.phien) phien = data.data.phien;
         else if (data?.data?.session) phien = data.data.session;
-        else if (data?.data?.id) phien = data.data.id;
         else if (data?.current_phien) phien = data.current_phien;
 
-        // 2. Lấy mảng xúc xắc (thử nhiều kiểu)
+        // Lấy xúc xắc
         if (Array.isArray(data?.xuc_xac)) dice = data.xuc_xac;
         else if (Array.isArray(data?.dice)) dice = data.dice;
         else if (Array.isArray(data?.data?.xuc_xac)) dice = data.data.xuc_xac;
         else if (Array.isArray(data?.data?.dice)) dice = data.data.dice;
-        else if (data?.result && Array.isArray(data.result)) dice = data.result; // một số API trả result
         else if (data?.x1 && data?.x2 && data?.x3) dice = [Number(data.x1), Number(data.x2), Number(data.x3)];
         else if (typeof data?.xuc_xac === "string") dice = data.xuc_xac.split("-").map(Number);
         else if (typeof data?.dice === "string") dice = data.dice.split("-").map(Number);
+        else if (data?.result && Array.isArray(data.result)) dice = data.result;
         else if (data?.value && typeof data.value === "string") {
-            // Trường hợp value = "3-5-2"
             const parts = data.value.split("-");
             if (parts.length === 3) dice = parts.map(Number);
         }
-        // Nếu dice vẫn null, thử tìm bất kỳ mảng 3 số nào trong data
-        if (!dice) {
-            for (let key in data) {
-                if (Array.isArray(data[key]) && data[key].length === 3 && data[key].every(v => typeof v === "number")) {
-                    dice = data[key];
-                    break;
-                }
-            }
-        }
 
-        // Nếu không tìm thấy dice, báo lỗi rõ ràng (không random nữa)
         if (!dice || dice.length !== 3) {
-            console.error("❌ Không thể lấy xúc xắc từ API. Cấu trúc data:", data);
+            console.error("❌ Không lấy được xúc xắc từ API. Data:", data);
             return;
         }
 
         dice = dice.map(v => Number(v));
-        const total = dice.reduce((a, b) => a + b, 0);
+        const total = dice.reduce((a,b) => a+b, 0);
         const ket_qua = getResult(total);
-
-        // Nếu không có phien, tự sinh dựa trên thời gian
         if (!phien) phien = Date.now();
 
         const item = { phien, ket_qua, xuc_xac: dice.join("-"), tong: total, time: Date.now() };
-
-        // Tránh trùng lặp phiên
         const exists = history.find(i => i.phien == phien);
         if (!exists) {
             if (history.length > 0) updateLearningFromLastPrediction(item);
@@ -318,20 +488,16 @@ setInterval(fetchData, 4000);
 fetchData();
 
 // ===============================
-// ENDPOINT DEBUG - XEM RAW API
+// API ENDPOINTS
 // ===============================
-app.get("/debug-api", (req, res) => {
-    res.json({ lastRawResponse });
-});
+app.get("/debug-api", (req, res) => res.json({ lastRawResponse }));
 
-// ===============================
-// API CHÍNH (giữ nguyên)
-// ===============================
 app.get("/", (req, res) => {
     const latest = history[history.length - 1];
     if (!latest) return res.json({ msg: "Đang tải dữ liệu...", debug: lastRawResponse });
 
     const predict = analyze(history);
+    // Lưu dự đoán cho việc học
     predictionLog.push({
         phien: latest.phien + 1,
         du_doan: predict.du_doan,
