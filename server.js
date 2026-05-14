@@ -428,13 +428,15 @@ function analyze(history) {
 }
 
 // ===============================
-// CẬP NHẬT HỌC THÍCH ỨNG
+// CẬP NHẬT HỌC THÍCH ỨNG + GHI NHẬN THẮNG/THUA
 // ===============================
 function updateLearningFromLastPrediction(newItem) {
     if (predictionLog.length === 0) return;
     const prevPred = predictionLog.find(p => p.phien === newItem.phien);
     if (!prevPred) return;
     const wasCorrect = newItem.ket_qua === prevPred.du_doan;
+    prevPred.ket_qua_thuc = newItem.ket_qua;
+    prevPred.ket_qua_du_doan = wasCorrect ? "THẮNG ✅" : "THUA ❌";
     for (const sig of prevPred.signals) {
         if (signalStats[sig]) updateSignalAccuracy(sig, wasCorrect);
     }
@@ -545,6 +547,12 @@ app.get("/", (req, res) => {
     predictionLog.push({ phien: latest.phien + 1, du_doan: predict.du_doan, signals: signalKeys });
     if (predictionLog.length > 200) predictionLog.shift();
 
+    // Tìm kết quả dự đoán phiên TRƯỚC (phiên vừa ra) xem thắng hay thua
+    const prevPred = predictionLog.find(p => p.phien === latest.phien);
+    const ket_qua_du_doan_phien_truoc = prevPred
+        ? (prevPred.ket_qua_du_doan || "Đang chờ kết quả...")
+        : "Chưa có dự đoán phiên này";
+
     const results = history.map(h => h.ket_qua);
     const tai = results.filter(r => r === "tài").length;
     const xiu = results.length - tai;
@@ -560,34 +568,38 @@ app.get("/", (req, res) => {
     }));
 
     res.json({
-        // ── Thông tin phiên hiện tại ──
-        phien_hien_tai: latest.phien,
-        ket_qua_hien_tai: latest.ket_qua,
-        xuc_xac: latest.xuc_xac,
-        tong: latest.tong,
+        // ── Thông tin phiên vừa ra ──
+        Id: "Ha Quoc",
+        Phien: latest.phien,
+        Ket_qua: latest.ket_qua,
+        Xuc_xac: latest.xuc_xac,
+        Tong: latest.tong,
 
-        // ── Dự đoán phiên kế ──
-        phien_ke: latest.phien + 1,
-        du_doan: predict.du_doan.toUpperCase(),
-        do_tin_cay: predict.do_tin_cay,
-        do_tin_cay_so: predict.do_tin_cay_so,
-        cau_phan_tich: predict.cau,
-        chi_tiet_tin_hieu: predict.chi_tiet,
-        vote: predict.vote,
+        // ── Kết quả dự đoán phiên vừa rồi (thắng/thua) ──
+        Ket_qua_du_doan: ket_qua_du_doan_phien_truoc,
+
+        // ── Dự đoán phiên tiếp theo ──
+        Phien_tiep: latest.phien + 1,
+        Du_doan: predict.du_doan,
+        Do_tin_cay: predict.do_tin_cay,
+        Do_tin_cay_so: predict.do_tin_cay_so,
+        Cau: predict.cau,
+        Chi_tiet: predict.chi_tiet,
+        Vote: predict.vote,
 
         // ── Trạng thái cầu ──
-        streak_hien_tai: `${streak.value.toUpperCase()} x${streak.length}`,
+        Streak_hien_tai: `${streak.value} x${streak.length}`,
 
         // ── Thống kê ──
-        thong_ke: {
+        Thong_ke: {
             tong_phien: n,
             tai, xiu,
             ty_le_tai: n ? ((tai / n) * 100).toFixed(1) + "%" : "0%",
             ty_le_xiu: n ? ((xiu / n) * 100).toFixed(1) + "%" : "0%"
         },
 
-        // ── Độ chính xác tín hiệu (học thích ứng) ──
-        do_chinh_xac_tin_hieu: Object.fromEntries(
+        // ── Độ chính xác tín hiệu ──
+        Do_chinh_xac_tin_hieu: Object.fromEntries(
             Object.entries(signalStats).map(([k, v]) => [
                 k,
                 v.total >= 3 ? (v.correct / v.total * 100).toFixed(1) + "%" : "chưa đủ data"
@@ -595,7 +607,7 @@ app.get("/", (req, res) => {
         ),
 
         // ── Lịch sử 20 phiên ──
-        lich_su_20_phien: lich_su
+        Lich_su: lich_su
     });
 });
 

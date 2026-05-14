@@ -17,5 +17,41 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
+  },
+
+  "_sample_response": {
+    "_mo_ta": "Mẫu response từ API khi gọi GET /",
+    "Id": "Ha Quoc",
+    "Phien": 123456,
+    "Ket_qua": "tài",
+    "Xuc_xac": "5-5-5",
+    "Tong": 15,
+    "Ket_qua_du_doan": "THẮNG ✅",
+    "Phien_tiep": 123457,
+    "Du_doan": "xỉu",
+    "Do_tin_cay": "60%",
+    "Do_tin_cay_so": 60,
+    "Cau": "Bệt tài x3 → bẻ cầu (60%)",
+    "Chi_tiet": "Markov→Xỉu(62%) | Streak bẻ→xỉu",
+    "Vote": { "tai": 38, "xiu": 62 },
+    "Streak_hien_tai": "tài x3",
+    "Thong_ke": {
+      "tong_phien": 50,
+      "tai": 25,
+      "xiu": 25,
+      "ty_le_tai": "50.0%",
+      "ty_le_xiu": "50.0%"
+    },
+    "Lich_su": [
+      { "phien": 123456, "ket_qua": "tài", "xuc_xac": "5-5-5", "tong": 15 },
+      { "phien": 123455, "ket_qua": "tài", "xuc_xac": "4-6-3", "tong": 13 },
+      { "phien": 123454, "ket_qua": "xỉu", "xuc_xac": "1-2-4", "tong": 7  }
+    ],
+    "_ghi_chu": {
+      "THẮNG ✅": "Dự đoán phiên trước ĐÚNG",
+      "THUA ❌":  "Dự đoán phiên trước SAI",
+      "Chưa có dự đoán phiên này": "Server mới khởi động",
+      "Đang chờ kết quả...": "Đã dự đoán nhưng phiên chưa có kết quả"
+    }
   }
 }
