@@ -1,5 +1,6 @@
 // ===============================
-// server.js v3.0 - FIX API + THUẬT TOÁN BÁM CẦU / BẺ CẦU NÂNG CAO
+// server.js v4.0 - THUẬT TOÁN BÁM CẦU / BẺ CẦU NÂNG CAO
+// Cải tiến: streak thông minh, chu kỳ lặp, momentum 5 phiên
 // ===============================
 
 const express = require("express");
@@ -29,7 +30,9 @@ let signalStats = {
     cau22:   { correct: 0, total: 0 },
     cau33:   { correct: 0, total: 0 },
     cau121:  { correct: 0, total: 0 },
-    balance: { correct: 0, total: 0 }
+    balance: { correct: 0, total: 0 },
+    cyclic:  { correct: 0, total: 0 },
+    momentum:{ correct: 0, total: 0 }
 };
 
 // ===============================
@@ -99,30 +102,45 @@ function detect11Pattern(results, minLen = 4) {
     return { detected: count >= minLen, length: count };
 }
 
-// Cầu 2-2 (TTXX hoặc XXTT lặp)
+// Cầu 2-2 (TTXX hoặc XXTT lặp) - phát hiện cả cụm 2-2-2-2 dài
 function detect22Pattern(results) {
     if (results.length < 6) return false;
-    const r = results.slice(-8);
+    const r = results.slice(-12);
     const L = r.length;
+    // Chuẩn: AA BB AA BB (8 phiên)
+    if (L >= 8 &&
+        r[L-1] === r[L-2] && r[L-3] === r[L-4] &&
+        r[L-5] === r[L-6] && r[L-7] === r[L-8] &&
+        r[L-1] !== r[L-3] && r[L-3] !== r[L-5] &&
+        r[L-5] !== r[L-7]) return true;
+    // Tối thiểu: AA BB AA (6 phiên)
     if (L >= 6 &&
         r[L-1] === r[L-2] &&
         r[L-3] === r[L-4] &&
+        r[L-5] === r[L-6] &&
         r[L-1] !== r[L-3] &&
-        r[L-3] === r[L-5] &&
-        r[L-1] !== r[L-5]) return true;
+        r[L-3] !== r[L-5] &&
+        r[L-1] === r[L-5]) return true;
     return false;
 }
 
-// Cầu 3-3
+// Cầu 3-3 (AAA BBB lặp) - phát hiện cả cụm 3-3-3
 function detect33Pattern(results) {
     if (results.length < 8) return false;
-    const r = results.slice(-12);
+    const r = results.slice(-15);
     const L = r.length;
-    if (L >= 8 &&
+    // Chuẩn 3-3-3 (9 phiên)
+    if (L >= 9 &&
         r[L-1] === r[L-2] && r[L-2] === r[L-3] &&
         r[L-4] === r[L-5] && r[L-5] === r[L-6] &&
-        r[L-1] !== r[L-4] &&
-        r[L-4] === r[L-7] && r[L-1] !== r[L-7]) return true;
+        r[L-7] === r[L-8] && r[L-8] === r[L-9] &&
+        r[L-1] !== r[L-4] && r[L-4] !== r[L-7] &&
+        r[L-1] === r[L-7]) return true;
+    // Tối thiểu 3-3 (6 phiên)
+    if (L >= 6 &&
+        r[L-1] === r[L-2] && r[L-2] === r[L-3] &&
+        r[L-4] === r[L-5] && r[L-5] === r[L-6] &&
+        r[L-1] !== r[L-4]) return true;
     return false;
 }
 
@@ -142,6 +160,67 @@ function detect121Pattern(results) {
 function detectLongStreak(results, minLen = 4) {
     const streak = getCurrentStreak(results);
     return streak.length >= minLen ? streak : null;
+}
+
+// ── Phát hiện chu kỳ lặp bất kỳ độ dài N (N=2..5) ──
+// Trả về { detected, period, confidence } hoặc null
+function detectCyclicPattern(results, minCycles = 3) {
+    if (results.length < 6) return null;
+    const win = results.slice(-30); // Xét 30 phiên gần nhất
+    for (let period = 2; period <= 5; period++) {
+        if (win.length < period * minCycles) continue;
+        let matchCount = 0, total = 0;
+        // Lùi từ cuối để đếm số chu kỳ khớp
+        const startIdx = win.length - period;
+        for (let offset = period; offset < win.length && offset < period * (minCycles + 2); offset += period) {
+            const base = startIdx - offset + period;
+            if (base < 0) break;
+            let cycleMatch = 0;
+            for (let j = 0; j < period; j++) {
+                if (win[startIdx - j] !== undefined && win[base + period - 1 - j] !== undefined &&
+                    win[startIdx - j] === win[base + period - 1 - j]) cycleMatch++;
+            }
+            total += period;
+            matchCount += cycleMatch;
+        }
+        if (total > 0 && matchCount / total >= 0.85) {
+            // Dự đoán ký tự tiếp theo theo chu kỳ
+            const posInCycle = win.length % period;
+            const nextPos = posInCycle;
+            // Lấy giá trị tại vị trí nextPos trong chu kỳ gần nhất
+            const cycleStart = win.length - (win.length % period === 0 ? period : win.length % period);
+            const predicted = win[cycleStart - period + nextPos];
+            if (predicted) {
+                return { detected: true, period, confidence: matchCount / total, predicted };
+            }
+        }
+    }
+    return null;
+}
+
+// ── Phân tích xu hướng ngắn 3-5 phiên (short momentum) ──
+function shortMomentum(results, window = 5) {
+    if (results.length < 3) return null;
+    const win = results.slice(-window);
+    // Đếm số đảo chiều vs tiếp tục
+    let flips = 0, conts = 0;
+    for (let i = 1; i < win.length; i++) {
+        if (win[i] !== win[i-1]) flips++;
+        else conts++;
+    }
+    const total = flips + conts;
+    if (total === 0) return null;
+    const flipRate = flips / total;
+    // flipRate > 0.6 → xu hướng đảo (bẻ cầu)
+    // flipRate < 0.4 → xu hướng bệt (theo cầu)
+    const last = win[win.length - 1];
+    if (flipRate > 0.6) {
+        const pred = last === "tài" ? "xỉu" : "tài";
+        return { type: "dao", predicted: pred, confidence: flipRate };
+    } else if (flipRate < 0.4) {
+        return { type: "bet", predicted: last, confidence: 1 - flipRate };
+    }
+    return null;
 }
 
 // Markov Chain xác suất
@@ -301,29 +380,42 @@ function analyze(history) {
         const sData = streakStat[sKey];
         const obs = sData.cont + sData.break;
 
-        // Xác suất gãy từ lịch sử, nếu chưa đủ dùng prior
+        // Xác suất gãy từ lịch sử thực tế, prior chỉ dùng khi chưa đủ data
         let breakProb;
-        if (obs >= 5) {
+        if (obs >= 8) {
+            // Đủ data: dùng hoàn toàn lịch sử thực
             breakProb = sData.break / obs;
+        } else if (obs >= 3) {
+            // Có ít data: pha 60% prior + 40% lịch sử
+            const priors = { 2: 0.45, 3: 0.50, 4: 0.58, 5: 0.65, 6: 0.72, 7: 0.78, 8: 0.83, 9: 0.87, 10: 0.90 };
+            const prior = priors[Math.min(sKey, 10)] || 0.90;
+            breakProb = prior * 0.6 + (sData.break / obs) * 0.4;
         } else {
-            // Prior: bệt càng dài càng dễ gãy
-            const priors = { 2: 0.47, 3: 0.52, 4: 0.60, 5: 0.68, 6: 0.75, 7: 0.80, 8: 0.84, 9: 0.87, 10: 0.90 };
+            // Chưa có data: dùng prior tinh chỉnh theo thực tế tài xỉu
+            const priors = { 2: 0.45, 3: 0.50, 4: 0.58, 5: 0.65, 6: 0.72, 7: 0.78, 8: 0.83, 9: 0.87, 10: 0.90 };
             breakProb = priors[Math.min(sKey, 10)] || 0.90;
-            // Pha trộn với lịch sử nếu có ít data
-            if (obs > 0) breakProb = (breakProb * (5 - obs) + (sData.break / obs) * obs) / 5;
         }
-        const contProb = 1 - breakProb;
 
-        if (breakProb > contProb) {
+        // Tăng ngưỡng bẻ cầu: chỉ bẻ khi breakProb đủ cao (> 0.55)
+        // Bệt ngắn (2-3): ưu tiên theo cầu hơn là bẻ
+        if (streak.length <= 3 && breakProb < 0.60) {
+            const contProb = 1 - breakProb;
+            if (streak.value === "tài") voteTai += streakWeight * contProb;
+            else voteXiu += streakWeight * contProb;
+            dominantCau = `Bệt ${streak.value} x${streak.length} → BÁM CẦU (${(contProb*100).toFixed(0)}%)`;
+            signals.push(`Streak theo→${streak.value}`);
+        } else if (breakProb > 0.55) {
+            const contProb = 1 - breakProb;
             const opposite = streak.value === "tài" ? "xỉu" : "tài";
             if (opposite === "tài") voteTai += streakWeight * breakProb;
             else voteXiu += streakWeight * breakProb;
             dominantCau = `Bệt ${streak.value} x${streak.length} → BẺ CẦU (${(breakProb*100).toFixed(0)}%)`;
             signals.push(`Streak bẻ→${opposite}`);
         } else {
+            const contProb = 1 - breakProb;
             if (streak.value === "tài") voteTai += streakWeight * contProb;
             else voteXiu += streakWeight * contProb;
-            dominantCau = `Bệt ${streak.value} x${streak.length} → theo cầu (${(contProb*100).toFixed(0)}%)`;
+            dominantCau = `Bệt ${streak.value} x${streak.length} → BÁM CẦU (${(contProb*100).toFixed(0)}%)`;
             signals.push(`Streak theo→${streak.value}`);
         }
     }
@@ -386,22 +478,40 @@ function analyze(history) {
         }
     }
 
-    // ── 9. Xu hướng siêu ngắn (2 phiên gần nhất) ─────────────
-    if (results.length >= 2) {
-        const lastTwo = results.slice(-2);
-        const shortW = 8;
-        if (lastTwo[0] === lastTwo[1]) {
-            // Bệt ngắn: theo cầu
-            if (lastTwo[0] === "tài") voteTai += shortW;
-            else voteXiu += shortW;
-            signals.push(`Short→${lastTwo[0]}`);
+    // ── 9. Xu hướng ngắn thông minh (3-5 phiên) ─────────────
+    if (results.length >= 3) {
+        const momentum = shortMomentum(results, 5);
+        const shortW = 10;
+        if (momentum) {
+            if (momentum.predicted === "tài") voteTai += shortW * momentum.confidence;
+            else voteXiu += shortW * momentum.confidence;
+            const label = momentum.type === "dao" ? "Momentum đảo" : "Momentum bệt";
+            signals.push(`${label}→${momentum.predicted}`);
         } else {
-            // Đảo: dự theo chiều tiếp theo
-            const next = lastTwo[1] === "tài" ? "xỉu" : "tài";
-            if (next === "tài") voteTai += shortW;
-            else voteXiu += shortW;
-            signals.push(`Short→${next}`);
+            // Fallback: xét 2 phiên gần nhất
+            const lastTwo = results.slice(-2);
+            const shortW2 = 6;
+            if (lastTwo[0] === lastTwo[1]) {
+                if (lastTwo[0] === "tài") voteTai += shortW2;
+                else voteXiu += shortW2;
+                signals.push(`Short→${lastTwo[0]}`);
+            } else {
+                const next = lastTwo[1] === "tài" ? "xỉu" : "tài";
+                if (next === "tài") voteTai += shortW2;
+                else voteXiu += shortW2;
+                signals.push(`Short→${next}`);
+            }
         }
+    }
+
+    // ── 10. Chu kỳ lặp (Cyclic Pattern) ─────────────────────
+    const cyclic = detectCyclicPattern(results);
+    if (cyclic && cyclic.detected) {
+        const cyclicW = 18;
+        if (cyclic.predicted === "tài") voteTai += cyclicW * cyclic.confidence;
+        else voteXiu += cyclicW * cyclic.confidence;
+        if (!dominantCau) dominantCau = `Chu kỳ ${cyclic.period} phiên`;
+        signals.push(`Cyclic(${cyclic.period})→${cyclic.predicted}`);
     }
 
     // ── Tổng hợp ─────────────────────────────────────────────
@@ -541,6 +651,8 @@ app.get("/", (req, res) => {
         if (s.includes("Cầu3-3")) return "cau33";
         if (s.includes("Cầu121")) return "cau121";
         if (s.includes("Cân bằng")) return "balance";
+        if (s.includes("Cyclic")) return "cyclic";
+        if (s.includes("Momentum")) return "momentum";
         return null;
     }).filter(Boolean);
 
